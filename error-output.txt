@@ -1,0 +1,28 @@
+﻿
+> my-project@0.1.0 build
+> next build
+
+node.exe : 'next' is 
+not recognized as an 
+internal or external 
+command,
+At C:\Program Files\n
+odejs\npm.ps1:29 
+char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: ('next'    
+ is not r...terna    
+l command,:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+operable program or 
+batch file.
