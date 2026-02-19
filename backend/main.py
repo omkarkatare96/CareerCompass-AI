@@ -13,15 +13,12 @@ from typing import Dict, Optional, List
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in environment variables")
+if not OPENROUTER_API_KEY:
+    raise ValueError("OPENROUTER_API_KEY not found in environment variables")
 
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-)
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ------------------ FastAPI App ------------------
 
@@ -77,32 +74,45 @@ async def health():
 
 # ------------------ Helper Function ------------------
 
-def call_gemini(prompt: str, retries: int = 1):
+def call_openrouter(prompt: str, retries: int = 1):
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
+        "model": "google/gemini-2.0-flash-001", # Using a standard flash model ID
+        "messages": [
+            {"role": "user", "content": prompt}
         ]
     }
 
     for attempt in range(retries + 1):
         try:
-            response = requests.post(GEMINI_URL, json=payload)
+            response = requests.post(OPENROUTER_URL, headers=headers, json=payload)
             response.raise_for_status()
             response_json = response.json()
 
-            if "candidates" not in response_json:
-                raise Exception(f"Invalid Gemini response: {response_json}")
+            if "choices" not in response_json or not response_json["choices"]:
+                raise Exception(f"Invalid OpenRouter response: {response_json}")
 
-            text_output = response_json["candidates"][0]["content"]["parts"][0]["text"]
+            text_output = response_json["choices"][0]["message"]["content"]
 
-            # Remove markdown formatting
+            # Try to find JSON block in markdown code blocks first
+            code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text_output, re.DOTALL)
+            if code_block_match:
+                cleaned = code_block_match.group(1)
+                return json.loads(cleaned)
+
+            # Fallback: Extract JSON object using regex (non-greedy to avoid trailing text issues if possible, but strict json usually works)
+            # Using greedy match for nested structures, but relying on valid JSON structure
+            json_match = re.search(r"\{.*\}", text_output, re.DOTALL)
+            if json_match:
+                cleaned = json_match.group(0)
+                return json.loads(cleaned)
+            
+            # Last resort: try cleaning
             cleaned = re.sub(r"```json|```", "", text_output).strip()
-
-            # Attempt to parse JSON
             return json.loads(cleaned)
 
         except (json.JSONDecodeError, Exception) as e:
@@ -110,8 +120,12 @@ def call_gemini(prompt: str, retries: int = 1):
                 time.sleep(1)  # Wait before retrying
                 continue
             
-            # If all retries fail, return an error structure or raw response
-            return {"error": "Failed to parse AI response", "raw_response": cleaned if 'cleaned' in locals() else str(e)}
+            # Propagate error so endpoints can catch it and return 500
+            print(f"OpenRouter Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"OpenRouter Error Details: {getattr(e.response, 'text', 'No text in response')}")
+            print(f"Raw Response: {text_output if 'text_output' in locals() else 'No response'}")
+            raise e
 
 
 # ------------------ Discover AI Route ------------------
@@ -119,10 +133,11 @@ def call_gemini(prompt: str, retries: int = 1):
 @app.post("/generate-discover")
 async def generate_discover(data: DiscoverRequest):
     try:
+        # Combine system instruction and user data into a single prompt for gemini-pro
         prompt = f"""
-        You are a career psychology analyst.
-
-        Based on these behavioral traits:
+        ROLE: You are an expert career psychologist and strategic life coach.
+        
+        USER PROFILE TO ANALYZE:
         - Reaction to Pressure/Fear: {data.pressure_fear}
         - Life/Work Preference: {data.life_preference}
         - Role in Teams: {data.team_role}
@@ -130,31 +145,35 @@ async def generate_discover(data: DiscoverRequest):
         - Energy Drain Source: {data.energy_drain}
         - Risk Tolerance: {data.risk_tolerance}
         
-        Custom Inputs: {data.custom_inputs}
+        Custom Inputs (if any): {data.custom_inputs}
 
-        Generate detailed behavioral career profiling including:
-        1. Core Personality Insight
-        2. Honest Reality Check
-        3. Suitable Career Streams
-        4. Suitable Career Roles
-        5. Career Types to Avoid
-        6. Skill Gaps
-        7. Radar-style trait explanation
+        YOUR TASK:
+        Generate a highly personalized, "brutally honest" behavioral career profile.
+        Do NOT give generic advice. Use the specific combination of traits above to tailor every sentence.
+        
+        1. **Core Personality Insight**: A deep psychological analysis of who they are at work. Connect their risk tolerance with their energy drain.
+        2. **Honest Reality Check**: A one-sentence "wake up call" about their current path vs. their nature.
+        3. **Suitable Career Streams**: 3-4 specific career fields that match their lifestyle preference and pressure handling.
+        4. **Suitable Career Roles**: 4-5 specific job titles that fit their team role and energy levels.
+        5. **Career Types to Avoid**: Jobs that would cause burnout given their specific energy drain.
+        6. **Skill Gaps**: Soft or hard skills they likely lack based on their failure response and risk tolerance.
+        7. **Radar Trait Explanation**: Brief explanation of why they scored high/low on traits.
 
-        Return STRICT JSON ONLY matching this structure:
+        Return STRICT JSON ONLY. NO MARKDOWN. NO CODE BLOCKS. Just the raw JSON string.
+        Ensure the structure matches exactly:
         {{
-            "core_personality_insight": "string",
-            "honest_reality_check": "string",
-            "suitable_career_streams": ["string", "string"],
-            "suitable_career_roles": ["string", "string"],
-            "career_types_to_avoid": ["string", "string"],
-            "skill_gaps": ["string", "string"],
+            "core_personality_insight": "string (detailed paragraph, ~100 words)",
+            "honest_reality_check": "string (punchy, impact sentence)",
+            "suitable_career_streams": ["string", "string", "string"],
+            "suitable_career_roles": ["string", "string", "string", "string"],
+            "career_types_to_avoid": ["string", "string", "string"],
+            "skill_gaps": ["string", "string", "string"],
             "radar_trait_explanation": {{
                 "trait_name": "description"
             }}
         }}
         """
-        return call_gemini(prompt)
+        return call_openrouter(prompt)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -196,7 +215,7 @@ async def generate_stream_analysis(data: StreamAnalysisRequest):
           "final_verdict": "string"
         }}
         """
-        return call_gemini(prompt)
+        return call_openrouter(prompt)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -233,7 +252,7 @@ async def generate_roadmap(data: RoadmapRequest):
           "year_3": []
         }}
         """
-        return call_gemini(prompt)
+        return call_openrouter(prompt)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

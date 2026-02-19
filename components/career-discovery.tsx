@@ -103,22 +103,13 @@ export function CareerDiscovery() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aiResult, setAiResult] = useState<any>(null)
-  const [timer, setTimer] = useState(5)
 
-  useEffect(() => {
-    if (started && !showResults) {
-      setTimer(5)
-      const interval = setInterval(() => {
-        setTimer((prev) => (prev > 0 ? prev - 1 : 0))
-      }, 1000)
-      return () => clearInterval(interval)
-    }
-  }, [currentQ, started, showResults])
+
+
 
   const progress = ((currentQ + 1) / questions.length) * 100
 
   function selectAnswer(answerValue: string) {
-    if (timer > 0) return
     setAnswers((prev) => ({
       ...prev,
       [currentQ]: answerValue,
@@ -204,7 +195,14 @@ export function CareerDiscovery() {
       if (!response.ok) {
         const errorText = await response.text()
         console.error("Server Error:", errorText)
-        throw new Error("Server error")
+        let errorMsg = "Server error"
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMsg = errorJson.detail || errorText;
+        } catch (e) {
+          errorMsg = errorText;
+        }
+        throw new Error(errorMsg)
       }
 
       const result = await response.json()
@@ -238,7 +236,6 @@ export function CareerDiscovery() {
   function prevQuestion() {
     if (currentQ > 0) {
       setCurrentQ((prev) => prev - 1)
-      setTimer(0) // No timer when going back
     }
   }
 
@@ -309,7 +306,7 @@ export function CareerDiscovery() {
                   Suitable Streams
                 </h3>
                 <div className="grid sm:grid-cols-2 gap-4">
-                  {aiResult.suitable_career_streams.map((stream: string, i: number) => (
+                  {aiResult.suitable_career_streams?.map((stream: string, i: number) => (
                     <div key={i} className="p-4 rounded-xl bg-green-500/5 border border-green-500/20 text-green-700 font-medium">
                       {stream}
                     </div>
@@ -323,7 +320,7 @@ export function CareerDiscovery() {
                   Ideal Roles
                 </h3>
                 <div className="flex flex-wrap gap-3">
-                  {aiResult.suitable_career_roles.map((role: string, i: number) => (
+                  {aiResult.suitable_career_roles?.map((role: string, i: number) => (
                     <span key={i} className="px-4 py-2 rounded-full bg-blue-500/10 text-blue-700 text-sm font-semibold">
                       {role}
                     </span>
@@ -340,7 +337,7 @@ export function CareerDiscovery() {
                   Avoid These Careers
                 </h3>
                 <ul className="space-y-3">
-                  {aiResult.career_types_to_avoid.map((career: string, i: number) => (
+                  {aiResult.career_types_to_avoid?.map((career: string, i: number) => (
                     <li key={i} className="flex gap-2 text-sm text-foreground/80">
                       <span className="text-red-500">✕</span> {career}
                     </li>
@@ -354,7 +351,7 @@ export function CareerDiscovery() {
                   Critical Skill Gaps
                 </h3>
                 <ul className="space-y-3">
-                  {aiResult.skill_gaps.map((gap: string, i: number) => (
+                  {aiResult.skill_gaps?.map((gap: string, i: number) => (
                     <li key={i} className="flex gap-2 text-sm text-foreground/80">
                       <span className="text-amber-500">⚠</span> {gap}
                     </li>
@@ -385,12 +382,10 @@ export function CareerDiscovery() {
       <div className="w-full max-w-3xl">
         <div className="flex items-center justify-between text-muted-foreground mb-8">
           <span className="font-mono text-sm">QS {currentQ + 1} / {questions.length}</span>
-          {timer > 0 && (
-            <div className="flex items-center gap-2 text-amber-600 font-bold animate-pulse">
-              <Clock className="w-4 h-4" />
-              <span>Wait {timer}s to answer</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-primary font-bold animate-pulse">
+            <Clock className="w-4 h-4" />
+            <span>Take your time</span>
+          </div>
         </div>
 
         <Progress value={progress} className="h-1 mb-12 bg-gray-200" />
@@ -410,9 +405,9 @@ export function CareerDiscovery() {
               <button
                 key={option.value}
                 onClick={() => selectAnswer(option.value)}
-                disabled={timer > 0}
+                disabled={loading}
                 className={`group relative p-6 rounded-2xl border-2 text-left transition-all duration-300
-                   ${timer > 0 ? 'opacity-50 cursor-not-allowed border-transparent bg-gray-100' :
+                   ${loading ? 'opacity-50 cursor-not-allowed border-transparent bg-gray-100' :
                     answers[currentQ] === option.value
                       ? 'border-primary bg-primary/5 shadow-md scale-[1.02]'
                       : 'border-transparent bg-white shadow-sm hover:border-primary/30 hover:shadow-md'
@@ -440,7 +435,7 @@ export function CareerDiscovery() {
                     setAnswers((prev) => ({ ...prev, [currentQ]: "" })) // Clear predefined selection
                   }
                 }}
-                disabled={timer > 0}
+                disabled={loading}
                 className="h-14 px-6 rounded-2xl border-transparent bg-white shadow-sm focus-visible:ring-primary/20 text-lg"
               />
             </div>
@@ -461,7 +456,7 @@ export function CareerDiscovery() {
           <Button
             size="lg"
             onClick={nextQuestion}
-            disabled={(!answers[currentQ] && !customInput) || timer > 0 || loading}
+            disabled={(!answers[currentQ] && !customInput) || loading}
             className="rounded-full px-8"
           >
             {loading ? (
