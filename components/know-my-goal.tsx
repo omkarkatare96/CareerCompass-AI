@@ -14,12 +14,15 @@ import {
   RefreshCw,
   TrendingUp,
   Brain,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { toast } from "sonner"
 import BlurText from "@/components/BlurText"
 import { CareerRoadmap, RoadmapData } from "@/components/career-roadmap"
+import { auth, db } from "@/lib/firebase"
+import { collection, addDoc, serverTimestamp } from "firebase/firestore"
 
 // Stream Interfaces
 interface StreamQuestion {
@@ -343,13 +346,29 @@ export function KnowMyGoal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           discover_result: result,
+          selected_stream: selectedStream.title,
           goals: `I want to pursue ${selectedStream.title} path.`
         })
       })
       if (!response.ok) throw new Error("Failed to generate roadmap")
-      const data = await response.json()
+      const data: RoadmapData = await response.json()
       setRoadmapData(data)
-      // Scroll to roadmap
+
+      // Save to Firestore (silently skip if not logged in)
+      try {
+        const user = auth.currentUser
+        if (user && data.phases) {
+          await addDoc(collection(db, "users", user.uid, "roadmaps"), {
+            stream: selectedStream.title,
+            phases: data.phases,
+            source: "goals",
+            generatedAt: serverTimestamp(),
+          })
+        }
+      } catch (saveErr) {
+        console.warn("Roadmap save skipped:", saveErr)
+      }
+
       setTimeout(() => {
         document.getElementById("generated-roadmap")?.scrollIntoView({ behavior: "smooth" })
       }, 100)
@@ -474,7 +493,7 @@ export function KnowMyGoal() {
               {/* Header Score */}
               <div className="bg-card rounded-3xl p-8 border border-border shadow-lg text-center relative overflow-hidden">
                 <div className={`absolute top-0 left-0 w-full h-2 ${result?.fit_level === 'Strong Fit' ? 'bg-green-500' :
-                  result?.fit_level === 'Conditional Fit' ? 'bg-amber-500' : 'bg-red-500'
+                    result?.fit_level === 'Conditional Fit' ? 'bg-amber-500' : 'bg-red-500'
                   }`} />
 
                 <h2 className="text-muted-foreground uppercase tracking-widest text-xs font-bold mb-2">Compatibility Score</h2>
@@ -482,7 +501,7 @@ export function KnowMyGoal() {
                   {result?.alignment_score}<span className="text-2xl text-muted-foreground">/100</span>
                 </div>
                 <div className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${result?.fit_level === 'Strong Fit' ? 'bg-green-100 text-green-700' :
-                  result?.fit_level === 'Conditional Fit' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                    result?.fit_level === 'Conditional Fit' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
                   }`}>
                   {result?.fit_level}
                 </div>
@@ -557,7 +576,11 @@ export function KnowMyGoal() {
               <div className="flex justify-center gap-4">
                 <Button variant="outline" onClick={reset}>Check Another Stream</Button>
                 <Button onClick={handleCreateRoadmap} disabled={loadingRoadmap}>
-                  {loadingRoadmap ? "Generating Roadmap..." : "Create Roadmap"}
+                  {loadingRoadmap ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Roadmap...</>
+                  ) : (
+                    <>Create Roadmap <ArrowRight className="ml-2 h-4 w-4" /></>
+                  )}
                 </Button>
               </div>
 
@@ -613,4 +636,3 @@ export function KnowMyGoal() {
     </section>
   )
 }
-

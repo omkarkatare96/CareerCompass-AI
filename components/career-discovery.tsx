@@ -17,7 +17,7 @@ import {
   Activity,
 } from "lucide-react"
 import { auth, db } from "@/lib/firebase"
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"
+import { doc, setDoc, collection, addDoc, serverTimestamp } from "firebase/firestore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -33,6 +33,7 @@ import {
 } from "recharts"
 import BlurText from "@/components/BlurText"
 import { CareerRoadmap, RoadmapData } from "@/components/career-roadmap"
+import { SprintPlanner } from "@/components/sprint-planner"
 import { toast } from "sonner"
 
 const questions = [
@@ -126,12 +127,29 @@ export function CareerDiscovery() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           discover_result: aiResult,
+          selected_stream: selectedStream,
           goals: `I want to pursue a career in ${selectedStream}. Other potential streams: ${streamNames?.join(", ")}. Potential roles: ${roleNames?.join(", ")}.`
         })
       })
       if (!response.ok) throw new Error("Failed to generate roadmap")
       const data = await response.json()
       setRoadmapData(data)
+
+      // Save to Firestore (silently skip if not logged in)
+      try {
+        const user = auth.currentUser
+        if (user && data.phases) {
+          await addDoc(collection(db, "users", user.uid, "roadmaps"), {
+            stream: selectedStream,
+            phases: data.phases,
+            source: "discover",
+            generatedAt: serverTimestamp(),
+          })
+        }
+      } catch (saveErr) {
+        console.warn("Roadmap save skipped:", saveErr)
+      }
+
       setTimeout(() => {
         document.getElementById("generated-roadmap")?.scrollIntoView({ behavior: "smooth" })
       }, 100)
@@ -143,9 +161,6 @@ export function CareerDiscovery() {
     }
   }
 
-
-
-
   const progress = ((currentQ + 1) / questions.length) * 100
 
   function selectAnswer(answerValue: string) {
@@ -156,38 +171,32 @@ export function CareerDiscovery() {
   }
 
   async function nextQuestion() {
-    // Get current selected answer
-    let finalAnswerForStep = answers[currentQ];
+    let finalAnswerForStep = answers[currentQ]
 
-    // If user typed custom input, override
     if (customInput && customInput.trim() !== "") {
-      finalAnswerForStep = customInput.trim();
+      finalAnswerForStep = customInput.trim()
       setAnswers((prev) => ({
         ...prev,
         [currentQ]: customInput.trim(),
-      }));
-      setCustomInput("");
+      }))
+      setCustomInput("")
     }
 
-    // Safety check: if still no answer, stop
     if (!finalAnswerForStep) {
-      console.log("No answer selected for question:", currentQ);
-      return;
+      console.log("No answer selected for question:", currentQ)
+      return
     }
 
-    // Create updated answers object
     const updatedAnswers = {
       ...answers,
       [currentQ]: finalAnswerForStep,
-    };
+    }
 
-    // If not last question → move next
     if (currentQ < questions.length - 1) {
-      setCurrentQ((prev) => prev + 1);
+      setCurrentQ((prev) => prev + 1)
     } else {
-      // Last question → submit
-      console.log("Submitting answers:", updatedAnswers);
-      submitDiscover(updatedAnswers);
+      console.log("Submitting answers:", updatedAnswers)
+      submitDiscover(updatedAnswers)
     }
   }
 
@@ -236,19 +245,16 @@ export function CareerDiscovery() {
         console.error("Server Error:", errorText)
         let errorMsg = "Server error"
         try {
-          const errorJson = JSON.parse(errorText);
-          errorMsg = errorJson.detail || errorText;
+          const errorJson = JSON.parse(errorText)
+          errorMsg = errorJson.detail || errorText
         } catch (e) {
-          errorMsg = errorText;
+          errorMsg = errorText
         }
         throw new Error(errorMsg)
       }
 
       const result = await response.json()
-
-      // 👇 THIS IS IMPORTANT ADDITION
       console.log("AI RESULT FULL OBJECT:", result)
-
       setAiResult(result)
 
       if (auth.currentUser) {
@@ -415,8 +421,8 @@ export function CareerDiscovery() {
                         type="button"
                         onClick={() => setSelectedStream(stream.name)}
                         className={`relative p-5 rounded-2xl border-2 text-left transition-all duration-200 group ${isSelected
-                            ? "border-green-500 bg-green-500/10 shadow-md scale-[1.02]"
-                            : "border-green-500/20 bg-green-500/5 hover:border-green-500/60 hover:shadow-md"
+                          ? "border-green-500 bg-green-500/10 shadow-md scale-[1.02]"
+                          : "border-green-500/20 bg-green-500/5 hover:border-green-500/60 hover:shadow-md"
                           }`}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -464,7 +470,7 @@ export function CareerDiscovery() {
               </div>
             </div>
 
-            {/* Avoid & Gaps — unchanged */}
+            {/* Avoid & Gaps */}
             <div className="space-y-8">
               <div className="bg-card rounded-3xl p-8 border border-border shadow-sm">
                 <h3 className="font-serif text-xl mb-4 flex items-center gap-2 text-red-600">
@@ -523,6 +529,15 @@ export function CareerDiscovery() {
           {roadmapData && (
             <div id="generated-roadmap" className="animate-in fade-in slide-in-from-bottom-10 duration-700">
               <CareerRoadmap roadmapData={roadmapData} />
+
+              {/* 90-Day Sprint Planner */}
+              <div className="mx-auto max-w-5xl px-4 pb-16">
+                <SprintPlanner
+                  selectedStream={selectedStream ?? ""}
+                  phase1Focus={roadmapData.phases?.[0]?.focus ?? []}
+                  personalityProfile={aiResult?.core_personality_insight ?? ""}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -588,7 +603,7 @@ export function CareerDiscovery() {
                 onChange={(e) => {
                   setCustomInput(e.target.value)
                   if (e.target.value) {
-                    setAnswers((prev) => ({ ...prev, [currentQ]: "" })) // Clear predefined selection
+                    setAnswers((prev) => ({ ...prev, [currentQ]: "" }))
                   }
                 }}
                 disabled={loading}

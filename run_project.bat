@@ -2,39 +2,46 @@
 setlocal
 
 echo ==========================================
-echo   Starting CareerCoach AI (All-in-One)
+echo   CareerCoach AI - Starting...
 echo ==========================================
 
-:: 1. Start Backend (FastAPI)
-echo [1/3] Starting Backend Server...
-cd backend
-if exist venv\Scripts\python.exe (
-    echo Using venv python...
-    start /b venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+:: 1. Kill existing processes to free ports
+echo [1/5] Killing existing node and python processes...
+taskkill /f /im node.exe >nul 2>&1
+taskkill /f /im python.exe >nul 2>&1
+taskkill /f /im uvicorn.exe >nul 2>&1
+echo Done.
+
+:: 2. Delete .next/dev/lock if it exists
+echo [2/5] Cleaning .next lock file...
+set "LOCK_FILE=C:\Users\OMKAR\Desktop\GIT\CAREERCOACH ai\.next\dev\locks"
+if exist "%LOCK_FILE%" (
+    rmdir /s /q "%LOCK_FILE%"
+    echo Lock removed.
 ) else (
-    echo Warning: venv not found. Trying global python...
-    start /b python -m uvicorn main:app --reload --port 8000
-)
-cd ..
-
-:: 2. Start Frontend (Next.js)
-echo [2/3] Starting Frontend Server...
-if not exist node_modules (
-    echo node_modules not found. Installing dependencies...
-    call npm install
+    echo No lock found.
 )
 
-:: Ensure local binaries are used
-start /b cmd /c "npm run dev"
+:: Also delete the lock file directly if present
+set "DEV_LOCK=C:\Users\OMKAR\Desktop\GIT\CAREERCOACH ai\.next\dev"
+if exist "%DEV_LOCK%\*.lock" del /f /q "%DEV_LOCK%\*.lock" >nul 2>&1
 
-:: 3. Launch Default Browser
-echo [3/3] Opening Dashboard in 5 seconds...
-:: Use ping as a fallback for timeout if it doesn't work
-ping 127.0.0.1 -n 6 > nul
-start http://localhost:3000
+:: 3. Start Backend in a new visible terminal
+echo [3/5] Starting Backend (FastAPI on :8000)...
+start "CareerCoach Backend" cmd /k "cd /d "C:\Users\OMKAR\Desktop\GIT\CAREERCOACH ai\backend" && call venv\Scripts\activate && uvicorn main:app --reload"
 
+:: 4. Wait 3 seconds
+echo [4/5] Waiting 3 seconds for backend to init...
+timeout /t 3 /nobreak >nul
+
+:: 5. Start Frontend in a new visible terminal
+echo [5/5] Starting Frontend (Next.js on :3000)...
+start "CareerCoach Frontend" cmd /k "cd /d "C:\Users\OMKAR\Desktop\GIT\CAREERCOACH ai" && npm run dev"
+
+echo.
 echo ==========================================
-echo   Servers form running in background.
-echo   Press Ctrl+C multiple times to stop or close this window.
+echo   Backend on  :8000
+echo   Frontend on :3000
+echo   Close the opened terminal windows to stop.
 echo ==========================================
 pause

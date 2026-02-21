@@ -13,13 +13,16 @@ import {
   Play,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
 } from "lucide-react"
 import BlurText from "@/components/BlurText"
 
 export interface Resource {
+  type: "youtube" | "course" | "Video" | "Article" | "PDF" | string
   title: string
-  type: string
   url?: string
+  provider?: string
+  estimatedTime?: string
 }
 
 export interface Phase {
@@ -31,7 +34,7 @@ export interface Phase {
   dotColor?: string
   focus: string[]
   avoid?: string[]
-  resources: Resource[]
+  resources?: Resource[]
 }
 
 export interface RoadmapData {
@@ -45,24 +48,22 @@ interface RoadmapProps {
 export function CareerRoadmap({ roadmapData }: RoadmapProps) {
   const [expandedPhase, setExpandedPhase] = useState<string>("phase_1")
 
-  // Fallback or use provided data
   const phasesToRender = roadmapData?.phases || []
 
   if (!roadmapData) {
-    return null // Don't render if no data
+    return null
   }
 
   // Icon mapping helper
   const getIcon = (phaseTitle: string) => {
     const lower = phaseTitle.toLowerCase()
-    if (lower.includes("foundation")) return Layers
-    if (lower.includes("skill")) return Wrench
-    if (lower.includes("prep")) return BookOpen
-    if (lower.includes("execution") || lower.includes("launch")) return Rocket
-    return Search // default
+    if (lower.includes("foundation") || lower.includes("base")) return Layers
+    if (lower.includes("skill") || lower.includes("build")) return Wrench
+    if (lower.includes("prep") || lower.includes("learn")) return BookOpen
+    if (lower.includes("execution") || lower.includes("launch") || lower.includes("deploy")) return Rocket
+    return Search
   }
 
-  // Helper to get color based on index or type (simplification)
   const getColors = (index: number) => {
     const colors = [
       { color: "bg-primary/10 text-primary border-primary/20", dot: "bg-primary" },
@@ -122,8 +123,7 @@ export function CareerRoadmap({ roadmapData }: RoadmapProps) {
                     <button
                       type="button"
                       onClick={() => setExpandedPhase(isExpanded ? "" : phaseId)}
-                      className={`w-full glass-card rounded-2xl p-6 text-left transition-all hover:shadow-md ${isExpanded ? "shadow-lg shadow-primary/5" : ""
-                        }`}
+                      className={`w-full glass-card rounded-2xl p-6 text-left transition-all hover:shadow-md ${isExpanded ? "shadow-lg shadow-primary/5" : ""}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -184,26 +184,52 @@ export function CareerRoadmap({ roadmapData }: RoadmapProps) {
                           {phase.resources && phase.resources.length > 0 && (
                             <div>
                               <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                                <Play className="h-4 w-4 text-accent" />
-                                Resources
+                                <BookOpen className="h-4 w-4 text-accent" />
+                                Learning Resources
                               </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {phase.resources.map((resource: Resource, i: number) => (
-                                  <a
-                                    key={i}
-                                    href={resource.url || "#"}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-muted-foreground text-xs cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20"
-                                  >
-                                    {resource.type === "Video" || resource.type === "YouTube" ? (
-                                      <Play className="h-3 w-3" />
-                                    ) : (
-                                      <BookOpen className="h-3 w-3" />
-                                    )}
-                                    {resource.title}
-                                  </a>
-                                ))}
+                              <div className="flex flex-col gap-2">
+                                {phase.resources.map((resource: Resource, i: number) => {
+                                  const isYoutube =
+                                    resource.type === "youtube" ||
+                                    resource.type === "Video" ||
+                                    resource.type === "YouTube"
+                                  const icon = isYoutube ? "🎬" : "📘"
+                                  const href = resource.url || "#"
+                                  return (
+                                    <a
+                                      key={i}
+                                      href={href}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-start gap-3 px-4 py-3 rounded-xl bg-muted/60 border border-border hover:bg-primary/5 hover:border-primary/20 transition-colors group"
+                                    >
+                                      <span className="text-lg flex-shrink-0 mt-0.5">{icon}</span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                                            {resource.title}
+                                          </span>
+                                          <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          {resource.provider && (
+                                            <span className="text-xs text-muted-foreground font-medium">
+                                              {resource.provider}
+                                            </span>
+                                          )}
+                                          {resource.provider && resource.estimatedTime && (
+                                            <span className="text-xs text-muted-foreground">·</span>
+                                          )}
+                                          {resource.estimatedTime && (
+                                            <span className="text-xs text-muted-foreground">
+                                              {resource.estimatedTime}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </a>
+                                  )
+                                })}
                               </div>
                             </div>
                           )}

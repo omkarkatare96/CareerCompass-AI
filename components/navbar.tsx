@@ -12,6 +12,7 @@ export function Navbar() {
     { label: "Home", href: "/" },
     { label: "Discover", href: "/discover" },
     { label: "My Goals", href: "/goals" },
+    { label: "Exams", href: "/exams" },
     { label: "Roadmap", href: "/roadmap" },
     { label: "Dashboard", href: "/dashboard" },
   ]

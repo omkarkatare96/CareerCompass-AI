@@ -58,6 +58,7 @@ class StreamAnalysisRequest(BaseModel):
 class RoadmapRequest(BaseModel):
     discover_result: dict
     goals: str
+    selected_stream: Optional[str] = ""
 
 
 # ------------------ Health Routes ------------------
@@ -81,7 +82,7 @@ def call_openrouter(prompt: str, retries: int = 1):
     }
     
     payload = {
-        "model": "google/gemini-2.0-flash-001", # Using a standard flash model ID
+        "model": "google/gemini-2.0-flash-001",
         "messages": [
             {"role": "user", "content": prompt}
         ]
@@ -104,8 +105,7 @@ def call_openrouter(prompt: str, retries: int = 1):
                 cleaned = code_block_match.group(1)
                 return json.loads(cleaned)
 
-            # Fallback: Extract JSON object using regex (non-greedy to avoid trailing text issues if possible, but strict json usually works)
-            # Using greedy match for nested structures, but relying on valid JSON structure
+            # Fallback: Extract JSON object using regex
             json_match = re.search(r"\{.*\}", text_output, re.DOTALL)
             if json_match:
                 cleaned = json_match.group(0)
@@ -117,10 +117,9 @@ def call_openrouter(prompt: str, retries: int = 1):
 
         except (json.JSONDecodeError, Exception) as e:
             if attempt < retries:
-                time.sleep(1)  # Wait before retrying
+                time.sleep(1)
                 continue
             
-            # Propagate error so endpoints can catch it and return 500
             print(f"OpenRouter Error: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 print(f"OpenRouter Error Details: {getattr(e.response, 'text', 'No text in response')}")
@@ -133,7 +132,6 @@ def call_openrouter(prompt: str, retries: int = 1):
 @app.post("/generate-discover")
 async def generate_discover(data: DiscoverRequest):
     try:
-        # Combine system instruction and user data into a single prompt for gemini-pro
         prompt = f"""
         ROLE: You are an expert career psychologist and strategic life coach.
         
@@ -241,32 +239,183 @@ async def generate_stream_analysis(data: StreamAnalysisRequest):
 @app.post("/generate-roadmap")
 async def generate_roadmap(data: RoadmapRequest):
     try:
+        stream_focus = data.selected_stream if data.selected_stream else "the most suitable career stream"
+        
         prompt = f"""
-        You are a professional career planner.
+        You are a professional career planner specializing in creating structured, actionable roadmaps for students.
 
-        Based on:
+        USER'S SELECTED STREAM: {stream_focus}
+        Generate a roadmap STRICTLY for: {stream_focus}. Do NOT suggest other streams or generalize.
 
-        Discover Analysis:
-        {data.discover_result}
+        User Goals: {data.goals}
 
-        User Goals:
-        {data.goals}
+        Behavioral Profile Summary: {data.discover_result}
 
-        Create a structured 3-year roadmap including:
-        - Skill milestones
-        - Certifications
-        - Projects
-        - Internship suggestions
-        - Learning resources
+        Create a structured 3-year roadmap with 3 phases. For EACH phase include:
+        - title (e.g. "Foundation", "Skill Building", "Launch")
+        - subtitle (time period, e.g. "Year 1 — Months 1-12")
+        - focus: 3-5 specific, actionable tasks tailored to {stream_focus}
+        - avoid: 2-3 common mistakes specific to this stream and phase
+        - resources: 2-3 items. Each resource MUST have all these fields:
+          - type: exactly "youtube" OR "course"
+          - title: exact real title of the video/course
+          - url: real, publicly accessible URL (must be a real link)
+          - provider: channel name or platform (e.g. "freeCodeCamp", "Traversy Media", "Coursera", "Google Career Certificates")
+          - estimatedTime: e.g. "4 hours", "6 weeks"
+          For YouTube resources: prefer freeCodeCamp, Traversy Media, Kevin Powell, Fireship, TechWorld with Nana.
+          For courses: prefer Google Career Certificates on Coursera, or well-known free Coursera courses.
+          ONLY include real, publicly verifiable URLs. Do NOT invent URLs.
 
-        Return JSON only in structured format like:
+        Return STRICT JSON ONLY. NO MARKDOWN. NO CODE BLOCKS.
 
         {{
-          "year_1": [],
-          "year_2": [],
-          "year_3": []
+          "phases": [
+            {{
+              "id": "phase_1",
+              "title": "string",
+              "subtitle": "string",
+              "focus": ["string", "string", "string"],
+              "avoid": ["string", "string"],
+              "resources": [
+                {{
+                  "type": "youtube",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }},
+                {{
+                  "type": "course",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }}
+              ]
+            }},
+            {{
+              "id": "phase_2",
+              "title": "string",
+              "subtitle": "string",
+              "focus": ["string", "string", "string"],
+              "avoid": ["string", "string"],
+              "resources": [
+                {{
+                  "type": "youtube",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }},
+                {{
+                  "type": "course",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }}
+              ]
+            }},
+            {{
+              "id": "phase_3",
+              "title": "string",
+              "subtitle": "string",
+              "focus": ["string", "string", "string"],
+              "avoid": ["string", "string"],
+              "resources": [
+                {{
+                  "type": "youtube",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }},
+                {{
+                  "type": "course",
+                  "title": "string",
+                  "url": "string",
+                  "provider": "string",
+                  "estimatedTime": "string"
+                }}
+              ]
+            }}
+          ]
         }}
         """
+        return call_openrouter(prompt)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------ Sprint AI Route ------------------
+
+class SprintRequest(BaseModel):
+    selectedStream: str
+    roadmapPhase1Focus: List[str]
+    personalityProfile: str
+
+
+@app.post("/generate-sprint")
+async def generate_sprint(data: SprintRequest):
+    try:
+        focus_str = "\n".join(f"- {f}" for f in data.roadmapPhase1Focus)
+
+        prompt = f"""
+        You are an elite career coach creating a hyper-specific 90-day action plan.
+
+        Target Career Stream: {data.selectedStream}
+        Phase 1 Roadmap Focus:
+        {focus_str}
+        Student Personality Profile: {data.personalityProfile}
+
+        Create EXACTLY 12 weeks of tasks (3 tasks per week = 36 tasks total).
+        Each task must be:
+        - Concrete and immediately actionable (not vague like "learn Python")
+        - Specific to {data.selectedStream}
+        - Progressively harder across weeks (Week 1 = beginner basics, Week 12 = near-professional level)
+        - Include a real, publicly accessible learning resource URL per task
+        - Prefer: YouTube (freeCodeCamp, Traversy Media, Fireship, The Coding Train), Coursera, MDN, official docs
+
+        Each week should have a short motivational theme (e.g. "HTML Foundations", "CSS Mastery", etc.)
+
+        Return STRICT JSON ONLY. No markdown. No code blocks.
+
+        {{
+          "weeks": [
+            {{
+              "week": 1,
+              "theme": "string",
+              "tasks": [
+                {{
+                  "id": "w1_t1",
+                  "task": "string (specific, actionable task description)",
+                  "resourceUrl": "string (real URL)",
+                  "resourceName": "string (resource title or channel name)",
+                  "estimatedTime": "string (e.g. '2 hours')"
+                }},
+                {{
+                  "id": "w1_t2",
+                  "task": "string",
+                  "resourceUrl": "string",
+                  "resourceName": "string",
+                  "estimatedTime": "string"
+                }},
+                {{
+                  "id": "w1_t3",
+                  "task": "string",
+                  "resourceUrl": "string",
+                  "resourceName": "string",
+                  "estimatedTime": "string"
+                }}
+              ]
+            }}
+          ]
+        }}
+
+        Include all 12 weeks with exactly 3 tasks each (ids: w1_t1 through w12_t3).
+        """
+
         return call_openrouter(prompt)
 
     except Exception as e:
